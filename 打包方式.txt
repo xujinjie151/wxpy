@@ -1,0 +1,5 @@
+pyinstaller wx3.py -F -w --hidden-import wx --hidden-import wx._xml 
+
+
+-F 单文件方式
+-w 去掉黑窗口
