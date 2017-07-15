@@ -16,8 +16,9 @@ import wx.xrc
 
 from gtts import gTTS
 import string, math
-from pygame import mixer, time  # Load the required library
+from pygame import mixer  # Load the required library
 import threading
+import gevent,time
 
 pub = []
 for p in string.punctuation:
@@ -32,13 +33,13 @@ pub.append("：".decode("utf8"))
 pub.append("！".decode("utf8"))
 
 # print pub
-# play_name = 'Speech.mp3'
+play_name = 'Speech{0}.mp3'
 # play_name_next = "Speechnext.mp3"
 # save_name = "%s.%s" % (play_name, '.tmp')
 mixer.init(frequency=30000)
-list_free = ["Speech.mp3", "Speechnext.mp3"]
-save_list = []
-
+# list_free = ["Speech.mp3", "Speechnext.mp3"]
+# save_list = []
+speechText_list = [" "]
 
 class MyFrame1(wx.Frame):
     def __init__(self, parent):
@@ -81,95 +82,47 @@ class MyFrame1(wx.Frame):
     def stopspeech(self, event):
         event.Skip()
 
-# 播放
-class myThread(threading.Thread):  # 继承父类threading.Thread
-    def __init__(self, name):
-        threading.Thread.__init__(self)
-        self.name = name
+def task_play(x):
+    ff = open(play_name.format(str(x)),"rb")
+    mixer.music.load(ff)
+    mixer.music.play(0)
+    while mixer.music.get_busy():  # still playing
+        time.sleep(0.5)
+    ff.close()
+    
 
-    def run(self):
-        print "t run"
-        self.play()
 
-    def play(self):
-        f = open(self.name, 'rb')
-        mixer.music.load(f)
-        mixer.music.play(loops=0, start=0.0)
-        while mixer.music.get_busy():  # still playing
-            time.wait(600)
-        f.close()
-        list_free.append(self.name)
 
-#存储
-class myThread1(threading.Thread):
-    def __init__(self,Stext):
-        threading.Thread.__init__(self)
-        self.text = Stext
-        print Stext
+# x数字
+def task_save(x):
 
-    def run(self):
-        print "t1 run"
-        self.play()
+    if x == 1:
+        print "播放：" +str(0)
+        task_play(0)
 
-    def play(self):
-        try:
-            self.text = self.text.encode("utf8")
-        except Exception:
-            pass
-        text = gTTS(text=self.text, lang='en', slow=False)
-        play_name = list_free.pop()
-        text.save(play_name)
-        save_list.append(play_name)
-        print len(save_list)
-        print "save finsh"
+    if x > 1 :
+        print "播放: "+str(x-1)
+        # mixer.music.queue(play_name.format(str(x-1)))
+        task_play((str(x-1)))
 
+    print "save: " + str(x)
+    text = gTTS(text=speechText_list[x].encode("utf8"), lang='zh', slow=False)
+    text.save(play_name.format(str(x)))
+
+
+
+        
 
 class SpeechFrame(MyFrame1):
     def __init__(self, parent):
         MyFrame1.__init__(self, parent)
 
-    def play(self, filename):
-        f = open(filename, 'rb')
-        mixer.music.load(f)
-        mixer.music.play()
-        while mixer.music.get_busy():  # still playing
-            time.wait(1000)
-        f.close()
-        list_free.append(filename)
-
-    def voice(self, x):
-        while len(x) > 0 or len(save_list)>0:
-            print "while"
-            # x = slist.pop()
-            # 保存
-            if list_free:
-                print "save"
-                t = myThread1(x.pop(0))
-                t.start()
-                t.join()
-                # text = gTTS(text=x.pop(0).encode("utf8"), lang='zh', slow=False)
-                # play_name = list_free.pop()
-                # text.save(play_name)
-                # save_list.append(play_name)
-
-            if not mixer.music.get_busy() and len(save_list) > 0 :
-                print "play music"
-                # t1 = myThread(save_list.pop())
-                # t1.start()
-                # t1.join()
-                self.play(save_list.pop())
 
     def showspeech(self, event):
         speechText = self.m_textCtrl1.GetValue()
         speechText = speechText.replace("\n",",")
         # 文件分段
-        speechText_list = [" "]
-
-        # maxNum = 60
-        # num = int(math.ceil(len(speechText) / float(maxNum)))
-        # print num
-        # for x in range(0, num):
-        #     speechText_list.append(speechText[x * maxNum + 0: x * maxNum + maxNum])
+        
 
         tempNum = 0
         allNum = len(speechText)
@@ -187,21 +140,26 @@ class SpeechFrame(MyFrame1):
         if not speechText_list:
             maxNum = 80
             num = int(math.ceil(len(speechText) / float(maxNum)))
-            print num
+            # print num
             for x in range(0, num):
                 speechText_list.append(speechText[x * maxNum + 0: x * maxNum + maxNum])
 
-        print speechText_list
+        threads = []
+        threads.append(gevent.spawn(task_save, 0))
+        for x in range(1,len(speechText_list)):
 
-        # for ss in speechText_list:
-        self.voice(speechText_list)
+            threads.append(gevent.spawn(task_save, x))
+            # threads.append(gevent.spawn(task_play, x-1))
 
-        # while True:
-        #     if len(list_free) == 1:
-        #         pass
-        #
-        #     time.wait(1000)
-        #     # self.play(play_name)
+        
+        # for x in range(len(speechText_list)):
+        #     # task_play(x)
+        #     threads.append(gevent.spawn(task_play, x))
+
+        gevent.joinall(threads)
+        task_play(len(speechText_list)-1)
+
+
 
     def stopspeech(self, event):
         mixer.music.pause()
